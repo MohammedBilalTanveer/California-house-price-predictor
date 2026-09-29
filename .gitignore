@@ -1,0 +1,7 @@
+# trained model (~30 MB); rebuilt by `python train.py` or on first `python app.py`
+model/
+
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
