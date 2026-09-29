@@ -1,14 +1,3 @@
----
-title: California House Price Map
-emoji: 🏠
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
-short_description: Click the map to predict a California house price
-pinned: false
----
-
 # California House Price Map
 
 Click anywhere on a map of California and get a random-forest estimate of the median house
@@ -90,7 +79,6 @@ static/           index.html, styles.css, app.js (Leaflet map, no build step)
 tests/            pytest suite for geo, predictor and API
 data/housing.csv  1990 California census data (20,640 block groups)
 Dockerfile        container image for hosting (trains the model at build time)
-Dockerfile.vercel the same image for Vercel, which serves on port 80
 ```
 
 ## API
@@ -130,56 +118,33 @@ automatically after an upgrade.
 The repo ships a `Dockerfile`, so any host that builds containers can run it. The model is
 trained while the image builds, so the server starts in seconds.
 
-### Hugging Face Spaces (recommended)
+### Render (recommended)
 
-Free, no credit card, and 2 CPUs with 16 GB of RAM, which is plenty for the random forest.
-
-1. Create a Space at <https://huggingface.co/new-space>: pick a name, choose **Docker** and
-   then **Blank**, keep the free **CPU basic** hardware, and create it.
-2. Push this repo to the Space. When git asks for a password, paste a Hugging Face
-   [access token](https://huggingface.co/settings/tokens) with **write** permission.
-
-   ```bash
-   git remote add space https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE
-   git push --force space main
-   ```
-
-   `--force` replaces the placeholder files the Space starts with. The settings block at the
-   top of this README (`sdk: docker`, `app_port: 7860`) tells the Space how to run the app.
-3. The first build takes a few minutes. The app then runs at
-   `https://YOUR_USERNAME-YOUR_SPACE.hf.space`. Push again whenever you change the code.
-
-A free Space goes to sleep after 48 hours without visitors and wakes on the next visit.
-
-### Render (deploys straight from GitHub)
+Free, and it deploys straight from this GitHub repo.
 
 1. Sign in at <https://render.com> with GitHub, choose **New > Web Service** and pick this
-   repository. Render finds the `Dockerfile` on its own.
-2. Choose the **Free** instance type, set **Health Check Path** to `/api/health`, and create
-   the service. Every push to `main` then redeploys it.
+   repository.
+2. Set **Language** to **Docker** (Render usually picks it because of the `Dockerfile`),
+   keep the `main` branch, choose the region closest to you, and pick the **Free** instance
+   type.
+3. Under **Advanced**, set **Health Check Path** to `/api/health`, then create the service.
+   The first build takes about 5 to 10 minutes, and every later push to `main` redeploys it.
 
-Free Render services have 512 MB of memory, and this app uses about 300 MB. They sleep after
-15 minutes without traffic, so the first visit after a break takes about a minute, and their
-small CPU share makes each estimate slower than on Hugging Face.
+The app then runs at `https://YOUR-SERVICE-NAME.onrender.com`. Free Render services have
+512 MB of memory, and this app uses about 300 MB. They sleep after 15 minutes without
+traffic, and waking up plus loading the model on their small CPU share means the first visit
+after a break takes a minute or two. Each workspace gets 750 free hours a month, enough for
+one app running all month.
 
-### Vercel (container deploy)
+### Other hosts
 
-Vercel's regular Python functions can't run this app, and a deploy fails with
-`500 FUNCTION_INVOCATION_FAILED`: the trained model isn't in the repo, so the app tries to
-train one, and their disk is read-only. Vercel can instead run the app as a container from
-`Dockerfile.vercel`:
-
-1. Push the repo with `Dockerfile.vercel` in it. A Vercel project connected to the repo picks
-   the file up on its next deploy, builds the image (training the model) and runs it.
-2. If the deploy fails on size, add the environment variable `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`
-   in the project settings and redeploy. The image holds about 490 MB, near Vercel's 500 MB
-   standard function limit.
-
-Vercel stops the container after 5 minutes without traffic, so the next visitor waits
-while it starts and loads the model. Container support is new, and Vercel's docs don't say
-whether the free Hobby plan includes it. If Vercel asks you to upgrade, use Hugging Face.
-
-Netlify can't run a Python server, so it doesn't work for this app.
+- **Hugging Face Spaces:** Docker Spaces need a paid plan (as of September 2026), and the
+  free ZeroGPU hardware only runs Gradio apps. With a paid plan, the Dockerfile works as-is:
+  add a settings block with `sdk: docker` and `app_port: 7860` to the top of this README and
+  push the repo to a Docker Space.
+- **Vercel and Netlify:** they run code as short-lived serverless functions (Netlify has no
+  Python server at all) on a read-only disk. This app needs its model loaded in a
+  long-running server, and on Vercel it fails with `500 FUNCTION_INVOCATION_FAILED`.
 
 ### Run the container yourself
 
