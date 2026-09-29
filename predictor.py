@@ -8,6 +8,7 @@ analysis.
 from __future__ import annotations
 
 import json
+import os
 
 import joblib
 import numpy as np
@@ -116,6 +117,11 @@ class HousePricePredictor:
     @classmethod
     def load(cls, retrain_if_needed: bool = True) -> HousePricePredictor:
         if retrain_if_needed and not _artifacts_usable():
+            if not os.access(train.BASE_DIR, os.W_OK):  # e.g. serverless hosts such as Vercel
+                raise RuntimeError(
+                    "No trained model in model/ and this server's files are read-only. Deploy with "
+                    "the Dockerfile (it trains the model while building) or run `python train.py` "
+                    "before deploying.")
             print("No usable trained model found - training one now (about a minute)...")
             train.train_and_save()
         metadata = json.loads(train.METADATA_FILE.read_text(encoding="utf-8"))

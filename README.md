@@ -157,8 +157,15 @@ A free Space goes to sleep after 48 hours without visitors and wakes on the next
 2. Choose the **Free** instance type, set **Health Check Path** to `/api/health`, and create
    the service. Every push to `main` then redeploys it.
 
-Free Render services have 512 MB of memory (this app uses about MEMORY_MB) and sleep after
-15 minutes without traffic, so the first visit after a break takes about a minute.
+Free Render services have 512 MB of memory, and this app uses about 300 MB. They sleep after
+15 minutes without traffic, so the first visit after a break takes about a minute, and their
+small CPU share makes each estimate slower than on Hugging Face.
+
+### Why not Vercel or Netlify?
+
+They run Python as short-lived serverless functions with a read-only disk and a size limit.
+This app needs scikit-learn and a 30 MB model loaded in a long-running server, so it fails
+there with `500 FUNCTION_INVOCATION_FAILED`. Use a container host like the two above.
 
 ### Run the container yourself
 

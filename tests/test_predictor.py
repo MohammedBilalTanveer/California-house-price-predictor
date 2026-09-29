@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from predictor import OutOfCoverageError, model_inputs, weighted_median
+import predictor as predictor_module
+from predictor import HousePricePredictor, OutOfCoverageError, model_inputs, weighted_median
 
 PALO_ALTO = (37.4419, -122.1430)
 FRESNO = (36.7378, -119.7871)
@@ -68,6 +69,13 @@ def test_points_without_coverage_are_rejected(predictor, place, lat, lon, code):
     with pytest.raises(OutOfCoverageError) as err:
         predictor.predict(lat, lon)
     assert err.value.code == code, place
+
+
+def test_missing_model_on_a_read_only_host_fails_with_a_clear_message(monkeypatch):
+    monkeypatch.setattr(predictor_module, "_artifacts_usable", lambda: False)
+    monkeypatch.setattr(predictor_module.os, "access", lambda path, mode: False)
+    with pytest.raises(RuntimeError, match="read-only"):
+        HousePricePredictor.load()
 
 
 def test_census_block_locations_are_always_accepted(predictor):
