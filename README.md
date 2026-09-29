@@ -90,6 +90,7 @@ static/           index.html, styles.css, app.js (Leaflet map, no build step)
 tests/            pytest suite for geo, predictor and API
 data/housing.csv  1990 California census data (20,640 block groups)
 Dockerfile        container image for hosting (trains the model at build time)
+Dockerfile.vercel the same image for Vercel, which serves on port 80
 ```
 
 ## API
@@ -161,11 +162,24 @@ Free Render services have 512 MB of memory, and this app uses about 300 MB. They
 15 minutes without traffic, so the first visit after a break takes about a minute, and their
 small CPU share makes each estimate slower than on Hugging Face.
 
-### Why not Vercel or Netlify?
+### Vercel (container deploy)
 
-They run Python as short-lived serverless functions with a read-only disk and a size limit.
-This app needs scikit-learn and a 30 MB model loaded in a long-running server, so it fails
-there with `500 FUNCTION_INVOCATION_FAILED`. Use a container host like the two above.
+Vercel's regular Python functions can't run this app, and a deploy fails with
+`500 FUNCTION_INVOCATION_FAILED`: the trained model isn't in the repo, so the app tries to
+train one, and their disk is read-only. Vercel can instead run the app as a container from
+`Dockerfile.vercel`:
+
+1. Push the repo with `Dockerfile.vercel` in it. A Vercel project connected to the repo picks
+   the file up on its next deploy, builds the image (training the model) and runs it.
+2. If the deploy fails on size, add the environment variable `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`
+   in the project settings and redeploy. The image holds about 490 MB, near Vercel's 500 MB
+   standard function limit.
+
+Vercel stops the container after 5 minutes without traffic, so the next visitor waits
+while it starts and loads the model. Container support is new, and Vercel's docs don't say
+whether the free Hobby plan includes it. If Vercel asks you to upgrade, use Hugging Face.
+
+Netlify can't run a Python server, so it doesn't work for this app.
 
 ### Run the container yourself
 
