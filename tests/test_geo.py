@@ -28,6 +28,21 @@ def test_neighbouring_places_are_outside(place, lat, lon):
     assert not geo.in_california(lat, lon), place
 
 
+@pytest.mark.parametrize("place, lat, lon", [
+    ("Santa Catalina Island", 33.39, -118.42),
+    ("San Clemente Island", 32.90, -118.50),
+])
+def test_offshore_islands_are_inside(place, lat, lon):
+    assert geo.in_california(lat, lon), place
+
+
+def test_land_border_runs_coast_to_coast():
+    (start_lon, start_lat), (end_lon, end_lat) = geo.CALIFORNIA_LAND_BORDER[0], geo.CALIFORNIA_LAND_BORDER[-1]
+    assert (start_lat, round(start_lon)) == (42.0, -124)   # Oregon line meets the Pacific
+    assert (round(end_lat, 2), round(end_lon)) == (32.53, -117)  # Mexico line meets the Pacific
+    assert geo.CALIFORNIA_BORDER[:len(geo.CALIFORNIA_LAND_BORDER)] == geo.CALIFORNIA_LAND_BORDER
+
+
 def test_haversine_san_francisco_to_los_angeles():
     assert geo.haversine_km(37.7749, -122.4194, 34.0522, -118.2437) == pytest.approx(559, abs=5)
 

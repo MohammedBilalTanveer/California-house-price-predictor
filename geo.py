@@ -5,21 +5,22 @@ import numpy as np
 
 EARTH_RADIUS_KM = 6371.0088
 
-# California's land border as (longitude, latitude). The Oregon (42 N), Nevada (120 W, then
-# the oblique line from Lake Tahoe to the Colorado River) and Mexico borders are straight
-# lines; the Colorado River (Arizona border) is approximated. The Pacific side is drawn far
-# offshore on purpose: water is rejected by the data-coverage check in predictor.py.
-CALIFORNIA_BORDER = [
-    (-125.0, 42.0), (-120.0, 42.0), (-120.0, 39.0), (-114.6333, 35.0017),
+# California's land border as (longitude, latitude), from the Pacific at the Oregon line:
+# east along 42 N, down the Nevada line (120 W, then the oblique line from Lake Tahoe to the
+# Colorado River), along the river (approximated) and west along the Mexico border to the sea.
+CALIFORNIA_LAND_BORDER = [
+    (-124.2124, 42.0), (-120.0, 42.0), (-120.0, 39.0), (-114.6333, 35.0017),
     (-114.575, 34.87), (-114.565, 34.80), (-114.49, 34.72), (-114.37, 34.46),
     (-114.14, 34.29), (-114.29, 34.14), (-114.43, 34.03), (-114.50, 33.60),
     (-114.68, 33.35), (-114.70, 33.10), (-114.47, 32.88), (-114.50, 32.74),
     (-114.62, 32.73), (-114.7196, 32.7183), (-117.1238, 32.5343),
-    (-117.35, 32.45), (-125.0, 32.45),
 ]
+# Closing the border far out in the Pacific gives a region that includes the coastal waters
+# and islands. Water itself is rejected by the data-coverage check in predictor.py.
+CALIFORNIA_BORDER = [*CALIFORNIA_LAND_BORDER, (-130.0, 32.2), (-130.0, 42.0)]
 
-# Map bounds used by the UI (south-west, north-east corners as [lat, lon]).
-CALIFORNIA_BOUNDS = [[32.3, -124.9], [42.2, -113.9]]
+# California's extent (south-west, north-east corners as [lat, lon]).
+CALIFORNIA_BOUNDS = [[32.53, -124.42], [42.01, -114.13]]
 
 # Reference points for "x km from <city>" labels.
 CITIES = [

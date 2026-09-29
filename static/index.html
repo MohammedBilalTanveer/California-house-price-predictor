@@ -13,17 +13,22 @@
 <body>
   <div class="app">
     <main class="map-wrap">
-      <div id="map" aria-label="Map of California. Click a location to estimate its median house value."></div>
       <header class="map-title card">
         <h1>California House Price Map</h1>
         <p>Click anywhere in California to estimate the median house value.</p>
       </header>
+      <div id="map" aria-label="Map of California. Click a location to estimate its median house value."></div>
       <div class="legend card" id="legend" hidden>
         <p class="legend-title">Median house value (1990)</p>
         <div class="legend-bar" id="legend-bar"></div>
         <div class="legend-ticks" id="legend-ticks"></div>
         <p class="legend-note">Each dot is a census block.</p>
       </div>
+      <button class="details-fab" id="details-fab" type="button" hidden>
+        See details
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </button>
     </main>
 
     <aside class="panel" id="panel" aria-label="Prediction details">

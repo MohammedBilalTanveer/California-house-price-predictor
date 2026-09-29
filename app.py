@@ -64,6 +64,11 @@ async def revalidate_static_files(request: Request, call_next):
     return response
 
 
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
 @app.get("/api/model-info")
 def model_info(request: Request) -> dict:
     return request.app.state.predictor.model_info()
@@ -87,4 +92,4 @@ app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))

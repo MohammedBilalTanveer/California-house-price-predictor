@@ -7,6 +7,10 @@ def test_index_serves_the_map(client):
     assert "California House Price Map" in response.text
 
 
+def test_health(client):
+    assert client.get("/api/health").json() == {"status": "ok"}
+
+
 def test_model_info(client):
     info = client.get("/api/model-info").json()
     assert info["model"]["n_estimators"] == 100
@@ -14,6 +18,11 @@ def test_model_info(client):
     histogram = info["dataset"]["value_histogram"]
     assert len(histogram["counts"]) == len(histogram["edges"]) - 1
     assert sum(histogram["counts"]) == info["dataset"]["n_blocks"]
+    california = info["california"]
+    (south, west), (north, east) = california["bounds"]
+    assert south < north and west < east
+    assert california["outline"][0] == [42.0, -124.2124]  # [lat, lon] pairs
+    assert len(california["region"]) == len(california["outline"]) + 2
 
 
 def test_blocks_layer(client):

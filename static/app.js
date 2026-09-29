@@ -72,10 +72,11 @@ const DRIVER_INPUT = {
   households: (i) => `${fmtInt.format(Math.round(i.households))} in the block`,
 };
 
-// Sequential ramp for house value: one hue, light -> dark. Dark mode flips the anchor.
+// Sequential ramp for house value: one hue, light -> dark on light surfaces. On dark ones
+// (dark theme, dark basemap, satellite imagery) the anchor flips so expensive stays loud.
 const RAMP = {
   light: ["#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"],
-  dark: ["#184f95", "#1c5cab", "#256abf", "#2a78d6", "#3987e5", "#5598e7", "#6da7ec", "#86b6ef", "#9ec5f4", "#b7d3f6", "#cde2fb"],
+  dark: ["#256abf", "#2a78d6", "#3987e5", "#5598e7", "#6da7ec", "#86b6ef", "#9ec5f4", "#b7d3f6", "#cde2fb"],
 };
 const VALUE_MAX = 500_001;
 
@@ -108,7 +109,7 @@ function fill(el, ...children) {
 }
 
 const $ = (id) => document.getElementById(id);
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const cssVar = (name, el = document.documentElement) => getComputedStyle(el).getPropertyValue(name).trim();
 
 const lineIcon = (size, ...shapes) =>
   s("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
@@ -124,8 +125,9 @@ const icons = {
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 const theme = () => (darkQuery.matches ? "dark" : "light");
 
-function valueScale() {
-  const stops = RAMP[theme()].map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+/** value -> color on the ramp for a "light" or "dark" surface (the page theme by default). */
+function valueScale(tone = theme()) {
+  const stops = RAMP[tone].map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
   return (value) => {
     const t = Math.min(1, Math.max(0, value / VALUE_MAX)) * (stops.length - 1);
     const i = Math.min(stops.length - 2, Math.floor(t));
@@ -160,37 +162,83 @@ const state = {
 
 // ---------------------------------------------------------------- map
 
-let map, blocksLayer, selectionLayer, neighborsLayer, baseLayers, currentBase, pinMarker;
-let userPickedBase = false; // once the user picks a basemap, theme changes leave it alone
-let switchingBase = false;
-let neighborMarkers = [];
+// Basemaps and their tone: dark imagery gets bright dots and a white pin, light maps the reverse.
+const BASEMAP_TONES = { Satellite: "dark", Light: "light", Dark: "dark", Streets: "light" };
+const DEFAULT_BASEMAP = "Satellite"; // what first-time visitors see; later visits keep their pick
+const BASEMAP_KEY = "house-price-map.basemap";
+// Everything outside California fades behind this mask; the state line is drawn on top.
+const MASK_STYLE = {
+  dark: { fill: "#000000", opacity: 0.6, line: "#ffffff" },
+  light: { fill: "#f9f9f7", opacity: 0.8, line: "#52514e" },
+};
 const NEIGHBOR_MIN_ZOOM = 10; // below this the 8 neighbours sit on top of the pin
+
+let map, caBounds, baseLayers, basemap, maskLayer, outlineLayer;
+let blocksLayer, neighborsLayer, selectionLayer, pinMarker;
+let paintedTone = null;
+let neighborMarkers = [];
 const blockRenderer = L.canvas({ padding: 0.3, pane: "blocks" });
 
-const defaultBase = () => baseLayers[theme() === "dark" ? "Dark" : "Light"];
+const mapTone = () => BASEMAP_TONES[basemap];
+const mapInk = () => cssVar("--map-ink", map.getContainer());
 const blockRadius = () => Math.min(6, Math.max(1.5, map.getZoom() * 0.55 - 1.5));
 
-function initMap(bounds) {
+function loadBasemapChoice() {
+  try {
+    const saved = localStorage.getItem(BASEMAP_KEY);
+    return Object.hasOwn(BASEMAP_TONES, saved) ? saved : DEFAULT_BASEMAP;
+  } catch {
+    return DEFAULT_BASEMAP; // storage blocked, e.g. private browsing
+  }
+}
+
+function saveBasemapChoice(name) {
+  try {
+    localStorage.setItem(BASEMAP_KEY, name);
+  } catch {
+    // Not remembered this time; the default still works.
+  }
+}
+
+/** Padding that keeps the state clear of the title card when it floats over the map. */
+function fitPadding() {
+  const title = document.querySelector(".map-title");
+  const top = getComputedStyle(title).position === "absolute" ? title.offsetTop + title.offsetHeight : 0;
+  return { paddingTopLeft: L.point(16, top + 12), paddingBottomRight: L.point(16, 16) };
+}
+
+/** Stop zooming out once the whole state is in view (re-run when the map's size changes). */
+function lockToCalifornia() {
+  const { paddingTopLeft, paddingBottomRight } = fitPadding();
+  map.setMinZoom(map.getBoundsZoom(caBounds, false, paddingTopLeft.add(paddingBottomRight)));
+}
+
+function initMap(california) {
+  caBounds = L.latLngBounds(california.bounds);
   map = L.map("map", {
     zoomControl: false,
-    minZoom: 5,
+    zoomSnap: 0.25,
     maxZoom: 18,
-    maxBounds: L.latLngBounds(bounds).pad(0.35),
-    maxBoundsViscosity: 0.9,
+    maxBounds: caBounds.pad(0.06),
+    maxBoundsViscosity: 1, // a hard edge: the map can't be dragged away from California
   });
   // Set the view first: Leaflet defers adding layers until the map has one, which would
   // otherwise make the initial basemap look like a user pick to the layers control.
-  map.fitBounds(bounds);
+  map.fitBounds(caBounds, { ...fitPadding(), animate: false });
+  lockToCalifornia();
   map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   L.control.zoom({ position: "topright" }).addTo(map);
-  // Census dots get their own pane so they can fade back behind a selection;
-  // place names sit above them so they stay readable.
-  map.createPane("blocks").style.zIndex = 390;
-  map.createPane("labels");
-  map.getPane("labels").style.zIndex = 450;
-  map.getPane("labels").style.pointerEvents = "none";
 
-  // Free, key-less tile services (Esri canvas basemaps, OpenStreetMap).
+  // Panes: census dots fade behind a selection, place names sit above them, and the
+  // mask sits above both so nothing outside California shows through.
+  map.createPane("blocks").style.zIndex = 390;
+  for (const [name, zIndex] of [["labels", 450], ["mask", 460]]) {
+    const pane = map.createPane(name);
+    pane.style.zIndex = zIndex;
+    pane.style.pointerEvents = "none";
+  }
+
+  // Free, key-less tile services (Esri, OpenStreetMap).
   const esri = (service, options = {}) => L.tileLayer(
     `https://server.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/{z}/{y}/{x}`,
     { maxZoom: 18, maxNativeZoom: 16, ...options },
@@ -201,28 +249,37 @@ function initMap(bounds) {
     esri(`Canvas/World_${tone}_Gray_Reference`, { pane: "labels" }),
   ]);
   baseLayers = {
+    Satellite: L.layerGroup([
+      esri("World_Imagery", { maxNativeZoom: 18, attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics" }),
+      esri("Reference/World_Boundaries_and_Places", { maxNativeZoom: 18, pane: "labels" }),
+    ]),
     Light: canvas("Light"),
     Dark: canvas("Dark"),
     Streets: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }),
-    Satellite: esri("World_Imagery", {
-      maxNativeZoom: 18, attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
-    }),
   };
-  currentBase = defaultBase().addTo(map);
+  basemap = loadBasemapChoice();
+  baseLayers[basemap].addTo(map);
+
+  const outside = [[20, -140], [20, -100], [55, -100], [55, -140]];
+  maskLayer = L.polygon([outside, california.region], { pane: "mask", stroke: false, interactive: false })
+    .addTo(map);
+  outlineLayer = L.polyline(california.outline, { pane: "mask", weight: 2, opacity: 0.85, interactive: false })
+    .addTo(map);
 
   blocksLayer = L.layerGroup().addTo(map);
   neighborsLayer = L.layerGroup();
   selectionLayer = L.layerGroup().addTo(map);
   L.control.layers(baseLayers, { "Census blocks (actual 1990 values)": blocksLayer }, { position: "topright" })
     .addTo(map);
+  applyMapTone();
 
-  // Leaflet fires this for programmatic switches too, hence the switchingBase guard.
   map.on("baselayerchange", (e) => {
-    currentBase = e.layer;
-    if (!switchingBase) userPickedBase = true;
+    basemap = e.name;
+    saveBasemapChoice(basemap);
+    applyMapTone();
   });
   map.on("overlayadd overlayremove", (e) => {
     if (e.layer === blocksLayer) $("legend").hidden = e.type === "overlayremove";
@@ -232,35 +289,44 @@ function initMap(bounds) {
     blocksLayer.eachLayer((layer) => layer.setRadius(radius));
     syncNeighborVisibility();
   });
+  map.on("resize", lockToCalifornia);
   map.on("click", (e) => selectPoint(e.latlng.lat, e.latlng.lng));
 }
 
-/** Match the default basemap to the light/dark theme, unless the user picked one. */
-function syncBaseToTheme() {
-  const wanted = defaultBase();
-  if (userPickedBase || wanted === currentBase) return;
-  switchingBase = true;
-  map.removeLayer(currentBase);
-  currentBase = wanted.addTo(map);
-  switchingBase = false;
+/** Restyle what the app draws on the map for the basemap's tone (dark imagery vs light map). */
+function applyMapTone() {
+  const tone = mapTone();
+  const container = map.getContainer();
+  container.classList.toggle("tone-dark", tone === "dark");
+  container.classList.toggle("tone-light", tone === "light");
+  const mask = MASK_STYLE[tone];
+  maskLayer.setStyle({ fillColor: mask.fill, fillOpacity: mask.opacity });
+  outlineLayer.setStyle({ color: mask.line });
+  if (tone === paintedTone) return;
+  paintedTone = tone;
+  const color = valueScale(tone);
+  const ink = mapInk();
+  blocksLayer.eachLayer((layer) => layer.setStyle({ fillColor: color(layer.options.value) }));
+  neighborsLayer.eachLayer((layer) => layer.setStyle(
+    layer instanceof L.CircleMarker ? { color: ink, fillColor: color(layer.options.value) } : { color: ink }));
+  paintLegend();
 }
 
 function drawBlocks() {
-  syncBaseToTheme(); // the dots are colored for the current theme; keep the basemap in step
-  const color = valueScale();
+  const color = valueScale(mapTone());
   const radius = blockRadius();
   blocksLayer.clearLayers();
   for (const [lat, lon, value] of state.blocks) {
     blocksLayer.addLayer(L.circleMarker([lat, lon], {
-      renderer: blockRenderer, radius, stroke: false, fillColor: color(value), fillOpacity: 0.85, interactive: false,
+      renderer: blockRenderer, radius, stroke: false, fillColor: color(value), fillOpacity: 0.85,
+      interactive: false, value,
     }));
   }
-  paintLegend();
   $("legend").hidden = !map.hasLayer(blocksLayer);
 }
 
 function paintLegend() {
-  $("legend-bar").style.background = `linear-gradient(to right, ${RAMP[theme()].join(", ")})`;
+  $("legend-bar").style.background = `linear-gradient(to right, ${RAMP[mapTone()].join(", ")})`;
   $("legend-ticks").replaceChildren(...[[0, "$0"], [2.5e5, "$250k"], [5e5, "$500k+"]].map(([v, text]) =>
     h("span", { style: `left: ${(v / VALUE_MAX) * 100}%` }, text)));
 }
@@ -284,6 +350,16 @@ function placePin(lat, lon, status, label) {
   }).openTooltip();
 }
 
+const scrollBehavior = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+/** On stacked (phone) layouts the map can be scrolled out of view; bring it back first. */
+function revealMap() {
+  const box = map.getContainer().getBoundingClientRect();
+  if (box.bottom < 80 || box.top > innerHeight - 80) {
+    document.querySelector(".map-wrap").scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+  }
+}
+
 /** Fade the census dots while a selection is shown, so it stands out. */
 const dimBlocks = (dimmed) => map.getPane("blocks").classList.toggle("is-dimmed", dimmed);
 
@@ -302,15 +378,18 @@ function clearSelection() {
 function drawSelection(result) {
   clearSelection();
   dimBlocks(true);
-  const ink = cssVar("--ink");
-  const color = valueScale();
+  const ink = mapInk();
+  const color = valueScale(mapTone());
   const here = [result.location.latitude, result.location.longitude];
   neighborMarkers = result.neighbors.map((n) => {
     const there = [n.latitude, n.longitude];
     L.polyline([here, there], { color: ink, weight: 1.5, opacity: 0.6, interactive: false }).addTo(neighborsLayer);
     const label = h("div", {}, h("strong", {}, money(n.median_house_value)),
       h("span", {}, `Actual 1990 value, ${km(n.distance_km)} away`));
-    return L.circleMarker(there, { radius: 6, color: ink, weight: 2, fillColor: color(n.median_house_value), fillOpacity: 1 })
+    return L.circleMarker(there, {
+      radius: 6, color: ink, weight: 2, fillColor: color(n.median_house_value), fillOpacity: 1,
+      value: n.median_house_value,
+    })
       .bindTooltip(label, { direction: "top", offset: [0, -6], className: "map-tip" })
       .addTo(neighborsLayer);
   });
@@ -363,7 +442,10 @@ function selectPoint(lat, lon, { zoom } = {}) {
   state.adjustments = {};
   clearSelection();
   placePin(lat, lon, "loading", "Estimating…");
-  if (zoom) map.flyTo([lat, lon], zoom, { duration: 1.1 });
+  if (zoom) {
+    revealMap();
+    map.flyTo([lat, lon], zoom, { duration: 1.1 });
+  }
   runPrediction(true);
 }
 
@@ -390,6 +472,7 @@ async function runPrediction(newPoint) {
       placePin(lat, lon, "ready", compactMoney(result.prediction.value));
     }
     renderResult(result, newPoint);
+    $("details-fab").hidden = false;
     announce(`${result.adjusted ? "What-if estimate" : "Estimated median house value"}: ${money(result.prediction.value)}.`);
   } catch (err) {
     if (err.name === "AbortError") return; // superseded by a newer request
@@ -399,6 +482,7 @@ async function runPrediction(newPoint) {
       placePin(lat, lon, "rejected", "No estimate here");
       dimBlocks(false);
       renderError(err);
+      $("details-fab").hidden = false;
     } else {
       const hero = $("sec-hero");
       hero?.querySelector(".callout--error")?.remove();
@@ -666,7 +750,8 @@ function renderDrivers(r) {
   const pct = (v) => ((v - lo) / span) * 100;
 
   const row = (cls, name, input, track, value) => h("div", { class: `driver ${cls}` },
-    h("div", {}, h("p", { class: "driver-name" }, name), input && h("p", { class: "driver-input" }, input)),
+    h("div", { class: "driver-label" }, h("p", { class: "driver-name" }, name),
+      input && h("p", { class: "driver-input" }, input)),
     h("div", { class: "driver-track" }, track),
     h("p", { class: "driver-value" }, value),
   );
@@ -755,24 +840,40 @@ function refreshControl(key) {
 
 function renderNeighbors(r) {
   const rows = r.neighbors.map((n, i) => {
-    const tr = h("tr", {},
+    const tr = h("tr", { tabindex: 0 },
       h("td", {}, km(n.distance_km)),
       h("td", {}, money(n.median_house_value)),
       h("td", {}, compactMoney(n.median_income * 1e4)),
       h("td", {}, `${Math.round(n.housing_median_age)} yrs`));
+    const showOnMap = () => {
+      revealMap();
+      map.flyTo([n.latitude, n.longitude], Math.max(map.getZoom(), 14), { duration: 0.9 });
+      map.once("moveend", () => highlightNeighbor(i, true));
+    };
     tr.addEventListener("pointerenter", () => highlightNeighbor(i, true));
     tr.addEventListener("pointerleave", () => highlightNeighbor(i, false));
+    tr.addEventListener("click", showOnMap);
+    tr.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      showOnMap();
+    });
     return tr;
   });
   const here = [r.location.latitude, r.location.longitude];
   $("sec-neighbors").replaceChildren(
     h("div", { class: "section-head" },
       h("h2", { class: "title-sm" }, "Nearest census blocks"),
-      h("button", { class: "btn-link", type: "button",
-        onclick: () => map.flyTo(here, Math.max(map.getZoom(), 13), { duration: 1.1 }) }, "Show on map")),
-    h("p", { class: "subtitle" }, "The actual 1990 data this neighbourhood was estimated from. Hover a row to find "
-      + "it on the map."),
-    h("table", { class: "data-table" },
+      h("button", {
+        class: "btn-link", type: "button",
+        onclick: () => {
+          revealMap();
+          map.flyTo(here, Math.max(map.getZoom(), 13), { duration: 1.1 });
+        },
+      }, "Show on map")),
+    h("p", { class: "subtitle" }, "The actual 1990 data this neighbourhood was estimated from. Hover or tap a row "
+      + "to find it on the map."),
+    h("table", { class: "data-table is-clickable" },
       h("thead", {}, h("tr", {}, ["Distance", "Actual value", "Income", "House age"].map((t) =>
         h("th", { scope: "col" }, t)))),
       h("tbody", {}, rows)),
@@ -786,19 +887,13 @@ function pointFromHash() {
   return match ? { lat: Number(match[1]), lon: Number(match[2]) } : null;
 }
 
+// The map is styled by its basemap; only the panel's histogram follows the page theme.
 darkQuery.addEventListener("change", () => {
-  if (!map) return;
-  if (state.blocks.length) {
-    drawBlocks();
-  } else {
-    syncBaseToTheme();
-    paintLegend();
-  }
-  if (state.result) {
-    drawSelection(state.result);
-    renderDistribution(state.result);
-  }
+  if (state.result) renderDistribution(state.result);
 });
+
+// On phones the details sit below the map; this button (shown after a tap) jumps there.
+$("details-fab").addEventListener("click", () => panel.scrollIntoView({ behavior: scrollBehavior(), block: "start" }));
 
 addEventListener("hashchange", () => {
   const point = pointFromHash();
@@ -829,8 +924,7 @@ async function start() {
     setBusy(false);
   }
 
-  initMap(state.info.bounds);
-  paintLegend();
+  initMap(state.info.california);
   const fromHash = pointFromHash();
   if (fromHash) {
     map.setView([fromHash.lat, fromHash.lon], 11);

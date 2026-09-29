@@ -63,18 +63,29 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 /* ---------- layout ---------- */
+/* Wide screens: the map beside the details panel. */
 .app { display: flex; height: 100vh; height: 100dvh; }
 .map-wrap { position: relative; flex: 1; min-width: 0; }
 #map { position: absolute; inset: 0; z-index: 0; }
 .panel {
-  position: relative; flex: none; width: 420px; overflow-y: auto;
+  position: relative; flex: none; width: clamp(340px, 32vw, 420px); overflow-y: auto;
   background: var(--surface); border-left: 1px solid var(--border);
+  container-type: inline-size; /* the panel's own width drives its layout (see the end of the file) */
 }
 
+/* Phones and portrait tablets: a title bar, the map, then the details below it. */
 @media (max-width: 899px) {
   .app { flex-direction: column; height: auto; }
-  .map-wrap { flex: none; height: 60vh; height: 60svh; min-height: 340px; }
+  .map-wrap { flex: none; display: flex; flex-direction: column; height: 66vh; height: 66svh; min-height: 380px; }
+  #map { position: relative; inset: auto; flex: 1; }
   .panel { width: auto; overflow: visible; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+/* Phones held sideways: side by side again, with a narrower panel. */
+@media (max-width: 899px) and (orientation: landscape) and (max-height: 540px) {
+  .app { flex-direction: row; height: 100vh; height: 100dvh; }
+  .map-wrap { flex: 1; height: auto; min-height: 0; }
+  .panel { width: min(320px, 42vw); overflow-y: auto; border-top: 0; border-left: 1px solid var(--border); }
 }
 
 /* ---------- map overlays ---------- */
@@ -89,6 +100,13 @@ button, input, select { font: inherit; color: inherit; }
 .map-title h1 { font-size: 17px; line-height: 1.25; font-weight: 650; letter-spacing: -0.01em; }
 .map-title p { margin-top: 2px; font-size: 13px; color: var(--ink-2); }
 
+.details-fab {
+  display: none; position: absolute; z-index: 1; right: 12px; bottom: 30px;
+  align-items: center; gap: 6px; padding: 9px 14px; border: 0; border-radius: 999px;
+  background: var(--ink); color: var(--surface); box-shadow: var(--shadow);
+  font-size: 13px; font-weight: 650; cursor: pointer;
+}
+
 .legend { position: absolute; z-index: 1; left: 12px; bottom: 28px; width: 232px; padding: 10px 12px 8px; }
 .legend-title { font-size: 12px; font-weight: 600; }
 .legend-bar { height: 8px; margin-top: 8px; border-radius: 4px; }
@@ -102,11 +120,24 @@ button, input, select { font: inherit; color: inherit; }
 .legend-note { margin-top: 2px; font-size: 11px; color: var(--ink-2); }
 
 @media (max-width: 899px) {
-  .map-title { padding: 8px 12px; }
-  .map-title h1 { font-size: 15px; }
+  .map-title {
+    position: static; max-width: none; padding: 10px 16px;
+    border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none;
+  }
+  .map-title h1 { font-size: 16px; }
   .map-title p { font-size: 12px; }
   .legend { bottom: 22px; width: 180px; padding: 8px 10px 6px; }
+  .legend-title { font-size: 11px; }
   .legend-note { display: none; }
+  .details-fab { display: inline-flex; }
+}
+@media (max-width: 899px) and (orientation: landscape) and (max-height: 540px) {
+  .map-title { padding: 6px 12px; }
+  .map-title p { display: none; }
+  .details-fab { display: none; }
+}
+@media (max-width: 360px) {
+  .legend { width: 156px; }
 }
 
 /* ---------- Leaflet, themed ---------- */
@@ -133,21 +164,26 @@ button, input, select { font: inherit; color: inherit; }
 .leaflet-blocks-pane { transition: opacity 0.25s; }
 .leaflet-blocks-pane.is-dimmed { opacity: 0.35; }
 
+/* Map ink follows the basemap's tone, not the page theme (applyMapTone in app.js):
+   white on satellite imagery and the dark basemap, near-black on the light ones. */
+#map { --map-ink: #ffffff; --map-halo: #1a1a19; --map-muted: #c3c2b7; }
+#map.tone-light { --map-ink: #0b0b0b; --map-halo: #fcfcfb; --map-muted: #52514e; }
+
 .pin { background: none; border: 0; }
 .pin svg { display: block; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
-.pin path { fill: var(--ink); stroke: var(--surface); stroke-width: 2; }
-.pin circle { fill: var(--surface); }
+.pin path { fill: var(--map-ink); stroke: var(--map-halo); stroke-width: 2; }
+.pin circle { fill: var(--map-halo); }
 .pin--loading svg { animation: pin-bob 0.7s ease-in-out infinite alternate; }
-.pin--rejected path { fill: var(--ink-3); }
+.pin--rejected path { fill: var(--map-muted); }
 @keyframes pin-bob { to { transform: translateY(-5px); } }
 
 .leaflet-tooltip.pin-label {
   padding: 4px 10px; border: 0; border-radius: 8px; box-shadow: var(--shadow);
-  background: var(--ink); color: var(--surface); font-size: 13px; font-weight: 650;
+  background: var(--map-ink); color: var(--map-halo); font-size: 13px; font-weight: 650;
 }
-.leaflet-tooltip-top.pin-label::before { border-top-color: var(--ink); }
-.leaflet-tooltip.pin-label--rejected { background: var(--surface); color: var(--ink-2); }
-.leaflet-tooltip-top.pin-label--rejected::before { border-top-color: var(--surface); }
+.leaflet-tooltip-top.pin-label::before { border-top-color: var(--map-ink); }
+.leaflet-tooltip.pin-label--rejected { background: var(--map-halo); color: var(--map-muted); }
+.leaflet-tooltip-top.pin-label--rejected::before { border-top-color: var(--map-halo); }
 .leaflet-tooltip.map-tip {
   padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font-size: 12px;
@@ -298,6 +334,40 @@ button, input, select { font: inherit; color: inherit; }
 }
 .tooltip strong { display: block; font-size: 13px; font-weight: 650; }
 .tooltip span { color: var(--ink-2); }
+
+.data-table.is-clickable tbody tr { cursor: pointer; }
+.data-table.is-clickable tbody tr:focus-visible { outline-offset: -2px; }
+
+/* ---------- narrow panels: phones, small laptops, phones held sideways ---------- */
+@container (max-width: 400px) {
+  .section { padding: 18px 16px; }
+  /* feature breakdown: label on its own line, bar and value underneath */
+  .driver {
+    grid-template-columns: minmax(0, 1fr) 4.5rem;
+    grid-template-areas: "label label" "track value";
+    row-gap: 6px;
+  }
+  .driver-label { grid-area: label; }
+  .driver-track { grid-area: track; }
+  .driver-value { grid-area: value; }
+  .driver--base, .driver--total { grid-template-areas: "label value"; }
+  .driver--base .driver-track, .driver--total .driver-track { display: none; }
+  .driver-zero { top: -3px; bottom: -3px; }
+}
+@container (max-width: 330px) {
+  .stats { grid-template-columns: 1fr; gap: 10px; }
+  .place-row { flex-wrap: wrap; }
+  .controls-foot { flex-direction: column; align-items: flex-start; }
+}
+
+/* ---------- touch screens: roomier tap targets ---------- */
+@media (pointer: coarse) {
+  .chip { padding: 9px 14px; }
+  .btn-link, .table-view summary { padding: 6px 0; }
+  .control input[type="range"] { height: 28px; }
+  .control select { padding: 9px 10px; }
+  .data-table td { padding-top: 9px; padding-bottom: 9px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .pin--loading svg, .progress::after { animation: none; }

@@ -256,7 +256,11 @@ class HousePricePredictor:
         return {
             **self.metadata,
             "ocean_categories": train.OCEAN_CATEGORIES,
-            "bounds": geo.CALIFORNIA_BOUNDS,
+            "california": {  # [lat, lon] pairs for the map
+                "bounds": geo.CALIFORNIA_BOUNDS,
+                "outline": [[lat, lon] for lon, lat in geo.CALIFORNIA_LAND_BORDER],
+                "region": [[lat, lon] for lon, lat in geo.CALIFORNIA_BORDER],
+            },
             "cpi_factor": CPI_2024 / CPI_1990,
         }
 
